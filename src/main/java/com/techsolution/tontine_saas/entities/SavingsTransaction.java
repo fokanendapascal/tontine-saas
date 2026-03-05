@@ -28,6 +28,16 @@ public class SavingsTransaction {
 
     private String description;
 
+    // 🔹 Nouveaux champs pour la traçabilité comptable
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal previousBalance;
+
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal balanceAfterTransaction;
+
+    @Builder.Default
+    private Boolean successful = true;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -39,6 +49,9 @@ public class SavingsTransaction {
     public void prePersist() {
         if(this.createdAt == null){
             this.createdAt = LocalDateTime.now();
+        }
+        if (this.successful == null) {
+            this.successful = true;
         }
     }
 }

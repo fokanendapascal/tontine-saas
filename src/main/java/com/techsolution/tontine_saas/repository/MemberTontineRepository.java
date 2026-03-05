@@ -18,4 +18,8 @@ public interface MemberTontineRepository extends JpaRepository<MemberTontine, Lo
     boolean existsByUserIdAndTontineId(Long userId, Long tontineId);
 
     long countByTontineId(Long tontineId);
+
+    boolean existsByUserId(Long userId);
+
+    long countByUserId(Long userId);
 }

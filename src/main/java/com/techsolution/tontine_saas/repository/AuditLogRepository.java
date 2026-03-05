@@ -2,9 +2,11 @@ package com.techsolution.tontine_saas.repository;
 
 import com.techsolution.tontine_saas.entities.AuditLog;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+@Repository
 public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
 
     // Récupérer l'historique d'un utilisateur du plus récent au plus ancien

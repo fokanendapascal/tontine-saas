@@ -2,9 +2,11 @@ package com.techsolution.tontine_saas.repository;
 
 import com.techsolution.tontine_saas.entities.Loan;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+@Repository
 public interface LoanRepository extends JpaRepository<Loan, Long> {
 
     // Spring Data comprend parfaitement "UserId" sans le underscore si la propriété est "user"
