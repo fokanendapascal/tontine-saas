@@ -5,15 +5,18 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 @Slf4j
 @Component
@@ -25,80 +28,52 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            FilterChain filterChain) throws ServletException, IOException {
+            @NonNull HttpServletRequest request,
+            @NonNull HttpServletResponse response,
+            @NonNull FilterChain filterChain) throws ServletException, IOException {
 
-        String path = request.getServletPath();
-
-        System.out.println(">>> JWT FILTER CALLED");
-        System.out.println("HEADER = " + request.getHeader("Authorization"));
-
-        // 🔹 Exclure Swagger et les endpoints d'auth PUBLICS uniquement
-        if (path.startsWith("/swagger-ui") ||
-                path.equals("/swagger-ui.html") ||
-                path.startsWith("/v3/api-docs") ||
-                path.equals("/api/v1/auth/login") ||
-                path.equals("/api/v1/auth/register")) {
-
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        // 🔹 Exclure OPTIONS (préflight CORS)
-        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        // ---------------------------------------
-        // 🔐 4. Traitement normal du JWT
-        // ---------------------------------------
         final String authHeader = request.getHeader("Authorization");
-        String token = null;
-        String email = null;
+        final String jwt;
+        final String userEmail;
+        final Long associationId;
 
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring(7);
-            // Ajoutez ceci pour voir le coupable :
-            log.info("TOKEN BRUT RECU: [{}]", token);
-            try {
-                email = jwtUtil.extractEmail(token);
-                log.info("EMAIL EXTRAIT: {}", email);
-            } catch (Exception e) {
-                log.warn("Erreur extraction email depuis JWT: {}", e.getMessage());
-                log.error("ERREUR D'EXTRACTION: {}", e.getMessage());
-            }
-        }else {
-            log.debug("Pas de token Bearer dans l’en-tête pour : {}", path);
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            filterChain.doFilter(request, response);
+            return;
         }
 
+        jwt = authHeader.substring(7);
 
-        if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            var userDetails = userDetailsService.loadUserByUsername(email);
+        try {
+            userEmail = jwtUtil.extractEmail(jwt);
+            associationId = jwtUtil.extractAssociationId(jwt); // Extraction de l'ID
 
-            if (jwtUtil.isTokenValid(token)) {
-                UsernamePasswordAuthenticationToken auth =
-                        new UsernamePasswordAuthenticationToken(
-                                userDetails, null, userDetails.getAuthorities()
-                        );
+            if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail);
 
-                auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                if (jwtUtil.isTokenValid(jwt, userDetails)) {
+                    // On peut passer l'ID dans les détails de l'authentification
+                    UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                            userDetails,
+                            null,
+                            userDetails.getAuthorities()
+                    );
 
-                SecurityContextHolder.getContext().setAuthentication(auth);
+                    // Stockage de l'associationId dans les détails pour récupération ultérieure
+                    Map<String, Object> details = new HashMap<>();
+                    details.put("associationId", associationId);
+                    authToken.setDetails(details);
 
-                log.info("User [{}] authenticated with roles: {}", email,
-                        userDetails.getAuthorities().stream()
-                                .map(a -> a.getAuthority())
-                                .toList());
-            } else {
-                log.warn("JWT invalid for email: {}", email);
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
+
+                    log.debug("User authenticated for Association ID: {}", associationId);
+                }
             }
-
-        } else if (email == null) {
-            log.warn("No email extracted from token for request: {}", request.getServletPath());
+        } catch (Exception e) {
+            log.error("Erreur de filtrage JWT : {}", e.getMessage());
         }
 
         filterChain.doFilter(request, response);
+
     }
 }

@@ -8,7 +8,9 @@ import com.techsolution.tontine_saas.exceptions.BaseException;
 import com.techsolution.tontine_saas.mappers.ContributionMapper;
 import com.techsolution.tontine_saas.repository.ContributionRepository;
 import com.techsolution.tontine_saas.repository.MemberTontineRepository;
+import com.techsolution.tontine_saas.repository.TontineRepository;
 import com.techsolution.tontine_saas.repository.UserRepository;
+import com.techsolution.tontine_saas.security.SecurityUtils;
 import com.techsolution.tontine_saas.services.AuditLogService;
 import com.techsolution.tontine_saas.services.ContributionService;
 import lombok.RequiredArgsConstructor;
@@ -28,32 +30,43 @@ public class ContributionServiceImpl implements ContributionService {
     private final MemberTontineRepository memberTontineRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final TontineRepository tontineRepository;
 
     @Override
     @Transactional
-    public ContributionResponse payContribution(ContributionRequest request, Long adminId) {
-        // 1. Récupérer le membre et l'admin
+    public ContributionResponse payContribution(ContributionRequest request) {
+        // 1. Identification via le SecurityContext
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+        Long adminId = SecurityUtils.getCurrentUserId();
+
+        // 2. Récupérer le membre et vérifier son appartenance à l'association
         MemberTontine member = memberTontineRepository.findById(request.getMemberTontineId())
                 .orElseThrow(() -> new BaseException("member.not.found", "MEMBER_NOT_FOUND", HttpStatus.NOT_FOUND));
+
+        if (!member.getTontine().getAssociation().getId().equals(associationId)) {
+            throw new BaseException("access.denied", "FORBIDDEN_ASSOCIATION", HttpStatus.FORBIDDEN);
+        }
 
         User admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new BaseException("user.not.found", "ADMIN_NOT_FOUND", HttpStatus.NOT_FOUND));
 
-        // 2. Logique de calcul automatique de pénalité (si activé)
+        // 3. Logique de calcul automatique de pénalité
         BigDecimal penalty = request.getPenalty() != null ? request.getPenalty() : BigDecimal.ZERO;
         if (Boolean.TRUE.equals(request.getAutoCalculatePenalty()) && request.getPaymentDate() != null) {
             if (request.getPaymentDate().isAfter(request.getDueDate())) {
-                // Exemple : 5% du montant par défaut (à adapter selon vos règles métier)
+                // Règle métier : 5% de pénalité si retard détecté
                 penalty = request.getAmount().multiply(new BigDecimal("0.05"));
             }
         }
 
-        // 3. Conversion et sauvegarde
+        // 4. Conversion et sauvegarde
         Contribution contribution = ContributionMapper.toEntity(request, member);
         contribution.setPenalty(penalty);
+        contribution.setStatus(ContributionStatus.PAID); // Statut forcé au paiement
+
         Contribution saved = contributionRepository.save(contribution);
 
-        // 4. Audit
+        // 5. Audit
         auditLogService.logAction("PAY_CONTRIBUTION", "Contribution", saved.getId(), admin);
 
         return convertToResponse(saved);
@@ -62,6 +75,16 @@ public class ContributionServiceImpl implements ContributionService {
     @Override
     @Transactional(readOnly = true)
     public List<ContributionResponse> getMemberHistory(Long memberTontineId) {
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+
+        // Vérification de sécurité
+        MemberTontine member = memberTontineRepository.findById(memberTontineId)
+                .orElseThrow(() -> new BaseException("member.not.found", "NOT_FOUND", HttpStatus.NOT_FOUND));
+
+        if (!member.getTontine().getAssociation().getId().equals(associationId)) {
+            throw new BaseException("access.denied", "UNAUTHORIZED", HttpStatus.FORBIDDEN);
+        }
+
         return contributionRepository.findByMemberTontineIdOrderByDueDateDesc(memberTontineId)
                 .stream()
                 .map(this::convertToResponse)
@@ -71,6 +94,13 @@ public class ContributionServiceImpl implements ContributionService {
     @Override
     @Transactional(readOnly = true)
     public List<ContributionResponse> getTontineHistory(Long tontineId) {
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+
+        // Vérification que la tontine appartient à l'asso connectée
+        if (!tontineRepository.existsByIdAndAssociationId(tontineId, associationId)) {
+            throw new BaseException("tontine.not.found", "NOT_FOUND", HttpStatus.NOT_FOUND);
+        }
+
         return contributionRepository.findByMemberTontine_Tontine_Id(tontineId)
                 .stream()
                 .map(this::convertToResponse)
@@ -87,9 +117,17 @@ public class ContributionServiceImpl implements ContributionService {
 
     @Override
     @Transactional
-    public void updateContributionStatus(Long id, String status, Long adminId) {
+    public void updateContributionStatus(Long id, String status) {
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+        Long adminId = SecurityUtils.getCurrentUserId();
+
         Contribution contribution = contributionRepository.findById(id)
                 .orElseThrow(() -> new BaseException("contribution.not.found", "NOT_FOUND", HttpStatus.NOT_FOUND));
+
+        if (!contribution.getMemberTontine().getTontine().getAssociation().getId().equals(associationId)) {
+            throw new BaseException("access.denied", "FORBIDDEN", HttpStatus.FORBIDDEN);
+        }
+
         User admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new BaseException("user.not.found", "ADMIN_NOT_FOUND", HttpStatus.NOT_FOUND));
 
@@ -99,22 +137,23 @@ public class ContributionServiceImpl implements ContributionService {
         auditLogService.logAction("UPDATE_STATUS", "Contribution", id, admin);
     }
 
+
     /**
      * Helper pour enrichir la réponse avec le total payé par le membre
      */
-    private ContributionResponse convertToResponse(Contribution contribution) {
-        BigDecimal totalPaid = contributionRepository.sumByMemberTontineId(contribution.getMemberTontine().getId());
-        return ContributionMapper.toResponse(contribution, totalPaid);
-    }
-
     @Override
     @Transactional(readOnly = true)
     public List<LateMemberResponse> getLateMembers(Long tontineId) {
-        // 1. Récupérer toutes les cotisations qui sont en retard (Statut LATE)
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+
+        // Sécurité Multi-tenant
+        if (!tontineRepository.existsByIdAndAssociationId(tontineId, associationId)) {
+            throw new BaseException("tontine.not.found", "NOT_FOUND", HttpStatus.NOT_FOUND);
+        }
+
         List<Contribution> lateContributions = contributionRepository
                 .findByMemberTontineTontineIdAndStatus(tontineId, ContributionStatus.LATE);
 
-        // 2. Regrouper par membre pour envoyer une seule relance globale
         return lateContributions.stream()
                 .collect(Collectors.groupingBy(c -> c.getMemberTontine().getUser()))
                 .entrySet().stream()
@@ -133,11 +172,16 @@ public class ContributionServiceImpl implements ContributionService {
                             .phone(user.getPhone())
                             .numberOfLateContributions(memberLates.size())
                             .totalDebt(totalDebt)
-                            .lastDueDate(memberLates.getFirst().getDueDate())
+                            .lastDueDate(memberLates.isEmpty() ? null : memberLates.get(0).getDueDate())
                             .build();
                 })
-                .collect(Collectors.toList());
+                .toList();
     }
 
+    private ContributionResponse convertToResponse(Contribution contribution) {
+        BigDecimal totalPaid = contributionRepository.sumByMemberTontineId(contribution.getMemberTontine().getId());
+        if (totalPaid == null) totalPaid = BigDecimal.ZERO;
+        return ContributionMapper.toResponse(contribution, totalPaid);
+    }
 
 }

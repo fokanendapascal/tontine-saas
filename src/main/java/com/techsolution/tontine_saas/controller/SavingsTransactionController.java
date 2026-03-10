@@ -7,7 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @CrossOrigin("*")
-@AllArgsConstructor
+@RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/v1/savings-transactions")
 @Tag(name = "Savings Transactions" , description = "API de gestion des transactions d'épargne")
@@ -23,17 +23,17 @@ public class SavingsTransactionController {
 
     private final SavingsTransactionService savingsTransactionService;
 
-    @Operation(summary = "Enregistrer une transaction", description = "Permet de traiter un dépôt ou un retrait sur un compte d'épargne.")
+    @Operation(summary = "Enregistrer une transaction",
+            description = "Permet de traiter un dépôt ou un retrait sur un compte d'épargne.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Transaction traitée avec succès"),
             @ApiResponse(responseCode = "400", description = "Données de transaction invalides ou solde insuffisant")
     })
-    @PostMapping("/admin/{adminId}")
+    @PostMapping
     public ResponseEntity<SavingsTransactionResponse> processTransaction(
-            @RequestBody SavingsTransactionRequest request,
-            @PathVariable("adminId") Long adminId
+            @RequestBody SavingsTransactionRequest request
     ){
-        SavingsTransactionResponse savedTransaction = savingsTransactionService.processTransaction(request, adminId);
+        SavingsTransactionResponse savedTransaction = savingsTransactionService.processTransaction(request);
         return new ResponseEntity<>(savedTransaction, HttpStatus.CREATED);
     }
 

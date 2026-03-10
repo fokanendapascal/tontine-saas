@@ -7,9 +7,9 @@ import java.util.List;
 
 public interface MemberTontineService {
 
-    MemberTontineResponse addMemberToTontine(MemberTontineRequest request, Long adminId);
+    MemberTontineResponse addMemberToTontine(MemberTontineRequest request);
 
-    void removeMemberFromTontine(Long id, Long adminId);
+    void removeMemberFromTontine(Long id);
 
     List<MemberTontineResponse> getMembersByTontine(Long tontineId);
 

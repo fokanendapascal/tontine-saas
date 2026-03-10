@@ -8,7 +8,7 @@ import java.util.List;
 
 public interface ContributionService {
 
-    ContributionResponse payContribution(ContributionRequest request, Long adminId);
+    ContributionResponse payContribution(ContributionRequest request );
 
     ContributionResponse getContributionById(Long id);
 
@@ -16,7 +16,7 @@ public interface ContributionService {
 
     List<ContributionResponse> getTontineHistory(Long tontineId);
 
-    void updateContributionStatus(Long id, String status, Long adminId);
+    void updateContributionStatus(Long id, String status);
 
     /**
      * Identifie les membres en retard pour une tontine spécifique

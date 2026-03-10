@@ -1,7 +1,9 @@
 package com.techsolution.tontine_saas.config;
 
+import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.support.ReloadableResourceBundleMessageSource;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
@@ -28,27 +30,39 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // 1. Désactiver le CSRF (car nous sommes en API Stateless / JWT)
+                // Liaison du CORS
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
                 .csrf(AbstractHttpConfigurer::disable)
 
-                // 2. Gestion de la session (Stateless)
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                )
 
-                // 3. Autorisations des requêtes
                 .authorizeHttpRequests(auth -> auth
-                        // Accès public (Swagger, H2 Console, Login)
-                        .requestMatchers("/api/v1/auth/**", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
+                        // 1. Swagger & Documentation
+                        .requestMatchers(
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html"
+                        ).permitAll()
 
-                        // Sécurité par module
+                        // 2. Auth & Inscription (Public)
+                        .requestMatchers(
+                                "/api/v1/auth/**",
+                                "/api/v1/associations/create" // Permettre la création d'asso au départ
+                        ).permitAll()
+
+                        // 3. Sécurité par Rôle (Exemple d'accès Admin)
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/tontines/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/loans/approve/**").hasRole("ADMIN")
 
-                        // Tout le reste doit être authentifié
+                        // Sécurisation spécifique des Tontines
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/tontines/**").hasRole("ADMIN")
+
+                        // 4. Tout le reste requiert une connexion
                         .anyRequest().authenticated()
                 )
 
-                // 4. Authentification de base (en attendant l'implémentation JWT)
                 .httpBasic(Customizer.withDefaults());
 
         return http.build();
@@ -80,5 +94,15 @@ public class SecurityConfig {
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config)
             throws Exception {
         return config.getAuthenticationManager();
+    }
+
+    @Bean
+    public MessageSource messageSource() {
+        ReloadableResourceBundleMessageSource messageSource = new ReloadableResourceBundleMessageSource();
+        messageSource.setBasename("classpath:messages");
+        messageSource.setDefaultEncoding("UTF-8");
+        // 🔹 TRÈS IMPORTANT : évite le NoSuchMessageException
+        messageSource.setUseCodeAsDefaultMessage(true);
+        return messageSource;
     }
 }

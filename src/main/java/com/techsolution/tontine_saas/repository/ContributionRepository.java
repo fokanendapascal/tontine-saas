@@ -36,4 +36,5 @@ public interface ContributionRepository extends JpaRepository<Contribution, Long
     @Query("SELECT COALESCE(SUM(c.amount), 0) FROM Contribution c WHERE c.memberTontine.id = :memberId AND c.status = 'PAID'")
     BigDecimal sumByMemberTontineId(@Param("memberId") Long memberId);
 
+    int countByMemberTontineId(Long id);
 }

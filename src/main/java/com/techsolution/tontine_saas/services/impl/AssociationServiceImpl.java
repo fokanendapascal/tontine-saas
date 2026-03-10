@@ -100,6 +100,21 @@ public class AssociationServiceImpl implements AssociationService {
         associationRepository.save(association);
     }
 
+    // 🔥 REACTIVATE
+    @Override
+    public void activateAssociation(Long id) {
+        Association association = associationRepository.findById(id)
+                .orElseThrow(() -> new BusinessException("association.not.found"));
+
+        if (Boolean.TRUE.equals(association.getActive())) {
+            throw new BusinessException("association.already.active");
+        }
+
+        association.setActive(true);
+
+        associationRepository.save(association);
+    }
+
     // 🔥 HARD DELETE
     @Override
     public void deleteAssociation(Long id) {

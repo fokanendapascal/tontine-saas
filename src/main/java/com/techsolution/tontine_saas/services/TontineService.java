@@ -7,14 +7,14 @@ import java.util.List;
 
 public interface TontineService {
 
-    TontineResponse createTontine(TontineRequest request, Long adminId);
+    TontineResponse createTontine(TontineRequest request);
 
     TontineResponse getTontineById(Long tontineId);
 
-    List<TontineResponse> getAssociationTontines(Long associationId, boolean onlyActive);
+    List<TontineResponse> getAssociationTontines(boolean onlyActive);
 
-    TontineResponse updateTontineStatus(Long id, boolean active, Long adminId);
+    TontineResponse updateTontineStatus(Long id, boolean active);
 
-    void deleteTontine(Long id, Long adminId);
+    void deleteTontine(Long id );
 
 }

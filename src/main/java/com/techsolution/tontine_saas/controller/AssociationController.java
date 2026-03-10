@@ -66,6 +66,14 @@ public class AssociationController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Réactiver une association",
+            description = "Restaure le statut actif d'une association précédemment désactivée.")
+    @PatchMapping("/{id}/activate")
+    public ResponseEntity<Void> activateAssociation(@PathVariable Long id) {
+        associationService.activateAssociation(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "Supprimer définitivement une association",
             description = "Action impossible si l'association possède encore des membres rattachés.")
     @DeleteMapping("/{id}")

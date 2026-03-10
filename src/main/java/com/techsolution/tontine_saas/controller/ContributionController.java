@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -17,24 +18,25 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/contributions")
 @RequiredArgsConstructor
-@Tag(name = "Contributions", description = "API de gestion des cotisations et des retards")
+@Tag(name = "Contributions", description = "API de gestion des cotisations, paiements et pénalités")
 public class ContributionController {
 
     private final ContributionService contributionService;
 
     @Operation(
             summary = "Enregistrer le paiement d'une cotisation",
-            description = "Permet de payer une cotisation. Calcule automatiquement une pénalité de 5% si le paiement est après l'échéance.")
-    @PostMapping("/pay/admin/{adminId}")
+            description = "L'admin et l'association sont identifiés par le token JWT. Calcule auto 5% de pénalité si retard.")
+    @PostMapping("/pay")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ContributionResponse> payContribution(
-            @RequestBody ContributionRequest request,
-            @PathVariable Long adminId
+            @RequestBody ContributionRequest request
     ) {
-        ContributionResponse response = contributionService.payContribution(request, adminId);
+        // Le service gère l'ID admin et l'ID association via SecurityContext
+        ContributionResponse response = contributionService.payContribution(request);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
-    @Operation(summary = "Historique des cotisations d'un membre")
+    @Operation(summary = "Historique des cotisations d'un membre spécifique")
     @GetMapping("/member/{memberTontineId}")
     public ResponseEntity<List<ContributionResponse>> getMemberHistory(
             @PathVariable Long memberTontineId
@@ -43,7 +45,7 @@ public class ContributionController {
         return ResponseEntity.ok(history);
     }
 
-    @Operation(summary = "Historique global d'une tontine")
+    @Operation(summary = "Historique global des cotisations d'une tontine")
     @GetMapping("/tontine/{tontineId}")
     public ResponseEntity<List<ContributionResponse>> getTontineHistory(
             @PathVariable Long tontineId
@@ -53,8 +55,8 @@ public class ContributionController {
     }
 
     @Operation(
-            summary = "Liste des membres en retard de paiement",
-            description = "Retourne la liste des membres ayant des cotisations au statut LATE avec le montant total de leur dette.")
+            summary = "Liste des membres en retard",
+            description = "Retourne les membres ayant des cotisations 'LATE' avec calcul de la dette totale.")
     @GetMapping("/tontine/{tontineId}/late-members")
     public ResponseEntity<List<LateMemberResponse>> getLateMembers(
             @PathVariable Long tontineId
@@ -63,20 +65,23 @@ public class ContributionController {
         return ResponseEntity.ok(lates);
     }
 
-    @Operation(summary = "Mettre à jour le statut d'une cotisation")
-    @PatchMapping("/{id}/status/{status}/admin/{adminId}")
+    @Operation(summary = "Forcer la mise à jour du statut d'une cotisation")
+    @PatchMapping("/{id}/status")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> updateStatus(
             @PathVariable Long id,
-            @PathVariable String status,
-            @PathVariable Long adminId
+            @RequestParam String status
     ) {
-        contributionService.updateContributionStatus(id, status, adminId);
+        // Passage du statut par RequestParam pour plus de flexibilité (ex: ?status=PAID)
+        contributionService.updateContributionStatus(id, status);
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "Détails d'une cotisation")
+    @Operation(summary = "Récupérer les détails d'une cotisation par son ID")
     @GetMapping("/{id}")
     public ResponseEntity<ContributionResponse> getContributionById(@PathVariable Long id) {
-        return ResponseEntity.ok(contributionService.getContributionById(id));
+        ContributionResponse details = contributionService.getContributionById(id);
+        return ResponseEntity.ok(details);
     }
+
 }

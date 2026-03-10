@@ -7,7 +7,7 @@ import java.util.List;
 
 public interface SavingsTransactionService {
 
-    SavingsTransactionResponse processTransaction(SavingsTransactionRequest request, Long adminId);
+    SavingsTransactionResponse processTransaction(SavingsTransactionRequest request);
 
     List<SavingsTransactionResponse> getTransactionHistory(Long savingsId);
 

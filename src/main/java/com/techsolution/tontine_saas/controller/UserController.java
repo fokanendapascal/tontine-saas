@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,7 +33,7 @@ public class UserController {
             @ApiResponse(responseCode = "400", description = "Données invalides")
     })
     @PostMapping
-    public ResponseEntity<UserResponse> createUser(@RequestBody UserRequest userRequest){
+    public ResponseEntity<UserResponse> createUser(@Valid @RequestBody UserRequest userRequest){
         UserResponse savedUser = userService.createUser(userRequest);
         return new ResponseEntity<>(savedUser, HttpStatus.CREATED);
     }

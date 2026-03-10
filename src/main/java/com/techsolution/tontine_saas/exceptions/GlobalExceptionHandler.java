@@ -99,6 +99,7 @@ public class GlobalExceptionHandler {
         String message = messageSource.getMessage(
                 "internal.error",
                 null,
+                "Erreur interne du serveur",
                 LocaleContextHolder.getLocale()
         );
 

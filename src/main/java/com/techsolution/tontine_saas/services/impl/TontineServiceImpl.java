@@ -8,6 +8,7 @@ import com.techsolution.tontine_saas.entities.User;
 import com.techsolution.tontine_saas.exceptions.BaseException;
 import com.techsolution.tontine_saas.mappers.TontineMapper;
 import com.techsolution.tontine_saas.repository.*;
+import com.techsolution.tontine_saas.security.SecurityUtils;
 import com.techsolution.tontine_saas.services.AuditLogService;
 import com.techsolution.tontine_saas.services.TontineService;
 import lombok.RequiredArgsConstructor;
@@ -31,8 +32,12 @@ public class TontineServiceImpl implements TontineService {
 
     @Override
     @Transactional
-    public TontineResponse createTontine(TontineRequest request, Long adminId) {
-        Association association = associationRepository.findById(request.getAssociationId())
+    public TontineResponse createTontine(TontineRequest request) {
+        // L'ID de l'association est extrait du JWT : impossible de créer une tontine pour autrui
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+        Long adminId = SecurityUtils.getCurrentUserId();
+
+        Association association = associationRepository.findById(associationId)
                 .orElseThrow(() -> new BaseException("association.not.found", "ASSOC_NOT_FOUND", HttpStatus.NOT_FOUND));
 
         User admin = userRepository.findById(adminId)
@@ -49,14 +54,21 @@ public class TontineServiceImpl implements TontineService {
     @Override
     @Transactional(readOnly = true)
     public TontineResponse getTontineById(Long id) {
-        Tontine tontine = tontineRepository.findById(id)
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+
+        // Sécurité : On vérifie que la tontine appartient bien à l'association de l'utilisateur
+        Tontine tontine = tontineRepository.findByIdAndAssociationId(id, associationId)
                 .orElseThrow(() -> new BaseException("tontine.not.found", "NOT_FOUND", HttpStatus.NOT_FOUND));
+
         return enrichResponse(tontine);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<TontineResponse> getAssociationTontines(Long associationId, boolean onlyActive) {
+    public List<TontineResponse> getAssociationTontines(boolean onlyActive) {
+        // Plus besoin de passer associationId en paramètre de méthode !
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+
         List<Tontine> tontines = onlyActive
                 ? tontineRepository.findByAssociationIdAndActiveTrue(associationId)
                 : tontineRepository.findByAssociationId(associationId);
@@ -68,8 +80,11 @@ public class TontineServiceImpl implements TontineService {
 
     @Override
     @Transactional
-    public TontineResponse updateTontineStatus(Long id, boolean active, Long adminId) {
-        Tontine tontine = tontineRepository.findById(id)
+    public TontineResponse updateTontineStatus(Long id, boolean active) {
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+        Long adminId = SecurityUtils.getCurrentUserId();
+
+        Tontine tontine = tontineRepository.findByIdAndAssociationId(id, associationId)
                 .orElseThrow(() -> new BaseException("tontine.not.found", "NOT_FOUND", HttpStatus.NOT_FOUND));
 
         User admin = userRepository.findById(adminId)
@@ -85,14 +100,17 @@ public class TontineServiceImpl implements TontineService {
 
     @Override
     @Transactional
-    public void deleteTontine(Long id, Long adminId) {
-        Tontine tontine = tontineRepository.findById(id)
+    public void deleteTontine(Long id) {
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+        Long adminId = SecurityUtils.getCurrentUserId();
+
+        Tontine tontine = tontineRepository.findByIdAndAssociationId(id, associationId)
                 .orElseThrow(() -> new BaseException("tontine.not.found", "NOT_FOUND", HttpStatus.NOT_FOUND));
 
         User admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new BaseException("admin.not.found", "NOT_FOUND", HttpStatus.NOT_FOUND));
 
-        // Sécurité : Impossible de supprimer si des membres y sont déjà inscrits
+        // Intégrité métier
         long memberCount = memberTontineRepository.countByTontineId(id);
         if (memberCount > 0) {
             throw new BaseException("tontine.not.empty", "FORBIDDEN_DELETE", HttpStatus.BAD_REQUEST);
@@ -102,13 +120,17 @@ public class TontineServiceImpl implements TontineService {
         auditLogService.logAction("DELETE_TONTINE", "Tontine", id, admin);
     }
 
+
     /**
      * Utilise les repositories annexes pour peupler les champs statistiques du DTO
      */
     private TontineResponse enrichResponse(Tontine tontine) {
         Long totalMembers = memberTontineRepository.countByTontineId(tontine.getId());
+        // On s'assure que sumPaidAmountByTontineId gère les retours null (BigDecimal.ZERO)
         BigDecimal totalCollected = contributionRepository.sumPaidAmountByTontineId(tontine.getId());
+        if(totalCollected == null) totalCollected = BigDecimal.ZERO;
 
         return TontineMapper.toResponse(tontine, totalMembers, totalCollected);
     }
+
 }
