@@ -7,6 +7,7 @@ import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -19,9 +20,9 @@ public class ContributionRequest {
     @Positive(message = "Amount must be positive")
     private BigDecimal amount;
 
-    private LocalDate dueDate;
+    private LocalDateTime dueDate;
 
-    private LocalDate paymentDate;
+    private LocalDateTime paymentDate;
 
     private BigDecimal penalty;
 

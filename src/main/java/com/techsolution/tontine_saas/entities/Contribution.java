@@ -5,6 +5,7 @@ import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -22,8 +23,8 @@ public class Contribution {
     @Column(nullable = false, precision = 19, scale = 4) // Précision financière standard
     private BigDecimal amount;
 
-    private LocalDate dueDate;
-    private LocalDate paymentDate;
+    private LocalDateTime dueDate;
+    private LocalDateTime paymentDate;
 
     @Builder.Default // Indispensable pour que le Builder respecte la valeur par défaut
     @Column(nullable = false)
@@ -39,7 +40,7 @@ public class Contribution {
 
     // Aide à la cohérence : mise à jour auto du statut si payé
     public void markAsPaid(BigDecimal penaltyAmount) {
-        this.paymentDate = LocalDate.now();
+        this.paymentDate = LocalDateTime.now();
         this.penalty = penaltyAmount != null ? penaltyAmount : BigDecimal.ZERO;
         this.status = ContributionStatus.PAID;
     }

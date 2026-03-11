@@ -8,15 +8,15 @@ import java.util.List;
 
 public interface LoanService {
 
-    LoanResponse createLoanRequest(LoanRequest loanRequest, Long userId);
+    LoanResponse createLoanRequest(LoanRequest loanRequest);
 
-    LoanResponse approveLoan(Long loanId, UserRequest adminRequest);
+    LoanResponse approveLoan(Long loanId);
 
-    LoanResponse rejectLoan(Long loanId, UserRequest adminRequest);
+    LoanResponse rejectLoan(Long loanId);
 
-    List<LoanResponse> getUserLoans(Long userId);
+    List<LoanResponse> getUserLoans();
 
-    List<LoanResponse> getAssociationLoans(Long associationId);
+    List<LoanResponse> getAssociationLoans();
 
     LoanResponse getLoanById(Long loanId);
 

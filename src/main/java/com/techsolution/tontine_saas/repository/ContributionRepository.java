@@ -8,33 +8,60 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
-import java.util.Arrays;
 import java.util.List;
 
 @Repository
 public interface ContributionRepository extends JpaRepository<Contribution, Long> {
 
-    // Standard et fonctionnel
     List<Contribution> findByMemberTontine_Tontine_Id(Long tontineId);
 
-    List<Contribution> findByMemberTontineIdOrderByDueDateDesc(Long memberTontineId);
+    List<Contribution> findByMemberTontine_User_Id(Long userId);
 
-    List<Contribution> findByMemberTontineUserId(Long userId);
-
-    // Filtrer les impayés (très utile pour une tontine)
-    List<Contribution> findByMemberTontineTontineIdAndStatus(Long tontineId, ContributionStatus status);
+    List<Contribution> findByMemberTontine_Tontine_IdAndStatus(Long tontineId, ContributionStatus status);
 
     long countByMemberTontine_Tontine_Id(Long tontineId);
 
-    // Correction de la requête : COALESCE est parfait ici pour éviter les NullPointerException
-    @Query("SELECT COALESCE(SUM(c.amount), 0) FROM Contribution c WHERE c.memberTontine.tontine.id = :tontineId AND c.status = 'PAID'")
-    BigDecimal sumPaidAmountByTontineId(@Param("tontineId") Long tontineId);
+    @Query("""
+        SELECT COALESCE(SUM(c.amount),0)
+        FROM Contribution c
+        WHERE c.memberTontine.tontine.id = :tontineId
+        AND c.status = :status
+    """)
+    BigDecimal sumPaidAmountByTontineId(
+            @Param("tontineId") Long tontineId,
+            @Param("status") ContributionStatus status
+    );
 
-    @Query("SELECT COALESCE(SUM(c.penalty), 0) FROM Contribution c WHERE c.memberTontine.tontine.id = :tontineId")
+    @Query("""
+        SELECT COALESCE(SUM(c.penalty),0)
+        FROM Contribution c
+        WHERE c.memberTontine.tontine.id = :tontineId
+    """)
     BigDecimal sumTotalPenaltiesByTontineId(@Param("tontineId") Long tontineId);
 
-    @Query("SELECT COALESCE(SUM(c.amount), 0) FROM Contribution c WHERE c.memberTontine.id = :memberId AND c.status = 'PAID'")
-    BigDecimal sumByMemberTontineId(@Param("memberId") Long memberId);
+    int countByMemberTontine_Id(Long id);
 
-    int countByMemberTontineId(Long id);
+    @Query("""
+        SELECT COALESCE(SUM(c.amount),0)
+        FROM Contribution c
+        WHERE c.memberTontine.tontine.association.id = :assocId
+        AND c.status = :status
+    """)
+    BigDecimal sumAmountByAssociationAndStatus(
+            @Param("assocId") Long assocId,
+            @Param("status") ContributionStatus status
+    );
+
+    List<Contribution> findByMemberTontine_IdOrderByDueDateDesc(Long memberTontineId);
+
+    @Query("""
+        SELECT COALESCE(SUM(c.amount),0)
+        FROM Contribution c
+        WHERE c.memberTontine.id = :memberTontineId
+        AND c.status = :status
+    """)
+    BigDecimal sumByMemberTontineId(
+            @Param("memberTontineId") Long memberTontineId,
+            @Param("status") ContributionStatus status
+    );
 }

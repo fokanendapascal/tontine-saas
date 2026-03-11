@@ -4,35 +4,37 @@ import com.techsolution.tontine_saas.dtos.request.UserRequest;
 import com.techsolution.tontine_saas.dtos.response.UserResponse;
 import com.techsolution.tontine_saas.services.UserService;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @CrossOrigin("*")
-@AllArgsConstructor
 @RestController
 @RequestMapping("/api/v1/users")
-@Tag(name = "Users" , description = "Api de gestion des utilisateurs")
+@RequiredArgsConstructor
+@Tag(name = "Users", description = "API de gestion des membres et utilisateurs de la plateforme")
 public class UserController {
 
-    private UserService userService;
+    private final UserService userService;
 
     //Build add User API REST
-    @Operation(summary = "Créer un nouvel utilisateur")
+    @Operation(summary = "Créer un nouvel utilisateur",
+            description = "L'association de l'utilisateur est automatiquement celle de l'admin créateur.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Utilisateur créé avec succès"),
             @ApiResponse(responseCode = "400", description = "Données invalides")
     })
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserResponse> createUser(@Valid @RequestBody UserRequest userRequest){
         UserResponse savedUser = userService.createUser(userRequest);
         return new ResponseEntity<>(savedUser, HttpStatus.CREATED);
@@ -45,9 +47,7 @@ public class UserController {
             @ApiResponse(responseCode = "404", description = "Utilisateur non trouvé")
     })
     @GetMapping("/{id}")
-    public ResponseEntity<UserResponse> getUserById(
-            @Parameter(description = "Identifiant unique de l'utilisateur") @PathVariable("id") Long userId
-    ){
+    public ResponseEntity<UserResponse> getUserById(@PathVariable("id") Long userId){
         UserResponse userResponse = userService.getUserById(userId);
         return ResponseEntity.ok(userResponse);
     }
@@ -58,47 +58,44 @@ public class UserController {
             @ApiResponse(responseCode = "404", description = "Utilisateur non trouvé")
     })
     @GetMapping("/email/{email}")
-    public ResponseEntity<UserResponse> getUserByEmail(
-          @PathVariable("email") String email
-    ){
+    public ResponseEntity<UserResponse> getUserByEmail(@PathVariable("email") String email){
         UserResponse userResponse = userService.getUserByEmail(email);
         return ResponseEntity.ok(userResponse);
     }
 
     //Build get all Users by association API REST
-    @Operation(summary = "Lister tous les utilisateurs par association")
-    @GetMapping("/association/{id}")
-    public ResponseEntity<List<UserResponse>> getAllUsers(
-           @Parameter(description = "Identifiant unique de l'association") @PathVariable("id") Long associationId
-    ){
-        List<UserResponse> users = userService.getUsersByAssociation(associationId);
+    @Operation(summary = "Lister tous les membres de l'association connectée")
+    @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<UserResponse>> getAllUsers(){
+        // L'associationId est récupéré silencieusement dans le service via le token
+        List<UserResponse> users = userService.getUsersByAssociation();
         return ResponseEntity.ok(users);
     }
 
     //Build update User status REST API
-    @Operation(summary = "Mettre à jour le statut d'un utilisateur")
-    @PutMapping("/{id}/status/{idAdmin}") // Séparation par des slashs
+    @Operation(summary = "Activer ou désactiver un compte utilisateur")
+    @PatchMapping("/{id}/status")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserResponse> updateUserStatus(
             @PathVariable("id") Long id,
-            @RequestParam boolean active, // Utilisation de @RequestParam pour le booléen
-            @PathVariable("idAdmin") Long idAdmin
+            @RequestParam boolean active
     ){
-        UserResponse userResponse = userService.updateUserStatus(id, active, idAdmin );
+        UserResponse userResponse = userService.updateUserStatus(id, active);
         return ResponseEntity.ok(userResponse);
     }
 
     //Build delete User REST API
-    @Operation(summary = "Supprimer un utilisateur")
+    @Operation(summary = "Supprimer définitivement un utilisateur")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Utilisateur supprimé"),
             @ApiResponse(responseCode = "404", description = "Utilisateur non trouvé")
     })
-    @DeleteMapping("/{id}/{idAdmin}") // Séparation par des slashs
-    public ResponseEntity<Void> deleteUser(
-            @PathVariable("id") Long userId,
-            @PathVariable("idAdmin") Long adminId
-    ) {
-        userService.deleteUser(userId, adminId);
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> deleteUser(@PathVariable("id") Long userId) {
+        userService.deleteUser(userId);
         return ResponseEntity.noContent().build();
     }
+
 }

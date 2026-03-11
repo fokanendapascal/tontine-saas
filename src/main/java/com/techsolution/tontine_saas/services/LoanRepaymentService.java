@@ -7,7 +7,7 @@ import java.util.List;
 
 public interface LoanRepaymentService {
 
-    LoanRepaymentResponse recordRepayment(LoanRepaymentRequest request, Long adminId);
+    LoanRepaymentResponse recordRepayment(LoanRepaymentRequest request);
 
     List<LoanRepaymentResponse> getRepaymentsByLoan(Long loanId);
 

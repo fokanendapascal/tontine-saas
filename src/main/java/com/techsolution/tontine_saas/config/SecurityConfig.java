@@ -1,12 +1,15 @@
 package com.techsolution.tontine_saas.config;
 
+import com.techsolution.tontine_saas.security.AuthEntryPointJwt;
+import com.techsolution.tontine_saas.security.JwtAuthFilter;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.support.ReloadableResourceBundleMessageSource;
-import org.springframework.http.HttpMethod;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -16,6 +19,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -25,7 +29,12 @@ import java.util.List;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity // Permet d'utiliser @PreAuthorize sur vos contrôleurs
+@RequiredArgsConstructor
 public class SecurityConfig {
+
+    private final JwtAuthFilter jwtAuthFilter;
+    private final AuthEntryPointJwt unauthorizedHandler;
+
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -34,6 +43,8 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
                 .csrf(AbstractHttpConfigurer::disable)
+
+                .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
 
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
@@ -63,9 +74,22 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
 
-                .httpBasic(Customizer.withDefaults());
+                // Ajout du filtre JWT
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+
 
         return http.build();
+    }
+
+    // --- HIÉRARCHIE DES RÔLES (Correction cruciale) ---
+
+    @Bean
+    public RoleHierarchy roleHierarchy() {
+        // Syntaxe moderne pour Spring Security 6+
+        return RoleHierarchyImpl.withDefaultRolePrefix()
+                .role("SUPER_ADMIN").implies("ADMIN")
+                .role("ADMIN").implies("USER")
+                .build();
     }
 
     // 🔹 CORS
@@ -105,4 +129,5 @@ public class SecurityConfig {
         messageSource.setUseCodeAsDefaultMessage(true);
         return messageSource;
     }
+
 }

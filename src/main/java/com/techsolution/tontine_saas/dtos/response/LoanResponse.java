@@ -1,6 +1,7 @@
 package com.techsolution.tontine_saas.dtos.response;
 
 import com.techsolution.tontine_saas.entities.LoanStatus;
+import jakarta.persistence.Column;
 import lombok.*;
 
 import java.math.BigDecimal;

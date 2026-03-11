@@ -2,6 +2,7 @@ package com.techsolution.tontine_saas.services.impl;
 
 import com.techsolution.tontine_saas.dtos.request.MemberTontineRequest;
 import com.techsolution.tontine_saas.dtos.response.MemberTontineResponse;
+import com.techsolution.tontine_saas.entities.ContributionStatus;
 import com.techsolution.tontine_saas.entities.MemberTontine;
 import com.techsolution.tontine_saas.entities.Tontine;
 import com.techsolution.tontine_saas.entities.User;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -132,7 +134,7 @@ public class MemberTontineServiceImpl implements MemberTontineService {
                 .orElseThrow(() -> new BaseException("admin.not.found", "ADMIN_NOT_FOUND", HttpStatus.NOT_FOUND));
 
         // Intégrité financière : Interdire la suppression si des contributions existent
-        if (contributionRepository.countByMemberTontineId(id) > 0) {
+        if (contributionRepository.countByMemberTontine_Id(id) > 0) {
             throw new BaseException("member.has.contributions", "FORBIDDEN_DELETE", HttpStatus.BAD_REQUEST);
         }
 
@@ -144,9 +146,16 @@ public class MemberTontineServiceImpl implements MemberTontineService {
      * Utilise le mapper pour transformer l'entité en réponse enrichie
      */
     private MemberTontineResponse convertToResponse(MemberTontine entity) {
-        long contributionCount = contributionRepository.countByMemberTontineId(entity.getId());
-        BigDecimal totalPaid = contributionRepository.sumByMemberTontineId(entity.getId());
-        if (totalPaid == null) totalPaid = BigDecimal.ZERO;
+
+        long contributionCount = contributionRepository
+                .countByMemberTontine_Id(entity.getId());
+
+        BigDecimal totalPaid = Optional.ofNullable(
+                contributionRepository.sumByMemberTontineId(
+                        entity.getId(),
+                        ContributionStatus.PAID
+                )
+        ).orElse(BigDecimal.ZERO);
 
         return MemberTontineMapper.toResponse(entity, contributionCount, totalPaid);
     }

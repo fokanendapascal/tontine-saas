@@ -9,16 +9,16 @@ import java.util.List;
 public interface SavingsService {
 
     // Initialisation du compte épargne
-    SavingsResponse createSavingsAccount(SavingsRequest request, Long adminId);
+    SavingsResponse createSavingsAccount(SavingsRequest request );
 
     // Dépôt d'argent
-    SavingsResponse deposit(Long userId, BigDecimal amount, Long adminId);
+    SavingsResponse deposit(Long userId, BigDecimal amount);
 
     // Retrait d'argent
-    SavingsResponse withdraw(Long userId, BigDecimal amount, Long adminId);
+    SavingsResponse withdraw(Long userId, BigDecimal amount);
 
     // Consultation
     SavingsResponse getSavingsByUserId(Long userId);
 
-    List<SavingsResponse> getAssociationSavings(Long associationId);
+    List<SavingsResponse> getAssociationSavings();
 }

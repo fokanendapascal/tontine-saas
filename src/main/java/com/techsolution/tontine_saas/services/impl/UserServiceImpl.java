@@ -11,6 +11,7 @@ import com.techsolution.tontine_saas.repository.AssociationRepository;
 import com.techsolution.tontine_saas.repository.MemberTontineRepository;
 import com.techsolution.tontine_saas.repository.SavingsRepository;
 import com.techsolution.tontine_saas.repository.UserRepository;
+import com.techsolution.tontine_saas.security.SecurityUtils;
 import com.techsolution.tontine_saas.services.AuditLogService;
 import com.techsolution.tontine_saas.services.UserService;
 import jakarta.persistence.EntityNotFoundException;
@@ -33,34 +34,41 @@ public class UserServiceImpl implements UserService {
     private final MemberTontineRepository memberTontineRepository;
     private final SavingsRepository savingsRepository;
     private final AuditLogService auditLogService;
-    private final PasswordEncoder passwordEncoder; // Nécessite une config BCrypt
+    private final PasswordEncoder passwordEncoder;
 
     @Override
     @Transactional
     public UserResponse createUser(UserRequest request) {
-        // 1. Vérification unicité email
+        // 1. Récupérer l'ID de l'association depuis le contexte de sécurité
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+        Long adminId = SecurityUtils.getCurrentUserId();
+
+        // 2. Vérification unicité email
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new BaseException("email.already.exists", "USER_EMAIL_DUPLICATE", HttpStatus.BAD_REQUEST);
         }
 
-        // 2. Récupérer l'association
-        Association association = associationRepository.findById(request.getAssociationId())
+        // 3. Récupérer l'association du contexte (plus sûr que request.getAssociationId())
+        Association association = associationRepository.findById(associationId)
                 .orElseThrow(() -> new BaseException("association.not.found", "ASSOC_NOT_FOUND", HttpStatus.NOT_FOUND));
 
-        // 3. Mapper et Enregistrer (Hachage du mot de passe)
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new BaseException("admin.not.found", "ADMIN_NOT_FOUND", HttpStatus.NOT_FOUND));
+
+        // 4. Mapper et Enregistrer
         String encodedPassword = passwordEncoder.encode(request.getPassword());
         User user = UserMapper.toEntity(request, association, encodedPassword);
         User savedUser = userRepository.save(user);
 
-        // 4. Initialisation automatique du compte épargne (Business Rule)
+        // 5. Initialisation automatique du compte épargne
         Savings savings = Savings.builder()
                 .balance(java.math.BigDecimal.ZERO)
                 .user(savedUser)
                 .build();
         savingsRepository.save(savings);
 
-        // 5. Audit
-        auditLogService.logAction("CREATE_USER", "User", savedUser.getId(), savedUser);
+        // 6. Audit (L'admin courant est l'auteur)
+        auditLogService.logAction("CREATE_USER", "User", savedUser.getId(), admin);
 
         return enrichResponse(savedUser);
     }
@@ -68,22 +76,37 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public UserResponse getUserById(Long id) {
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new BaseException("user.not.found", "USER_NOT_FOUND", HttpStatus.NOT_FOUND));
+
+        // Sécurité : Vérifier que l'utilisateur appartient à l'asso de l'appelant
+        validateAssociationAccess(user, associationId);
+
         return enrichResponse(user);
     }
+
 
     @Override
     @Transactional(readOnly = true)
     public UserResponse getUserByEmail(String email) {
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+
         User user = userRepository.findByEmailWithAssociation(email)
                 .orElseThrow(() -> new BaseException("user.not.found", "USER_NOT_FOUND", HttpStatus.NOT_FOUND));
+
+        validateAssociationAccess(user, associationId);
+
         return enrichResponse(user);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserResponse> getUsersByAssociation(Long associationId) {
+    public List<UserResponse> getUsersByAssociation() {
+        // L'ID est récupéré du token, plus besoin de le passer en paramètre
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+
         return userRepository.findByAssociationId(associationId).stream()
                 .map(this::enrichResponse)
                 .toList();
@@ -91,9 +114,14 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public UserResponse updateUserStatus(Long id, boolean active, Long adminId) {
+    public UserResponse updateUserStatus(Long id, boolean active) {
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+        Long adminId = SecurityUtils.getCurrentUserId();
+
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new BaseException("user.not.found", "USER_NOT_FOUND", HttpStatus.NOT_FOUND));
+
+        validateAssociationAccess(user, associationId);
 
         User admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new BaseException("admin.not.found", "ADMIN_NOT_FOUND", HttpStatus.NOT_FOUND));
@@ -107,26 +135,39 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public void deleteUser(Long id, Long adminId) {
+    public void deleteUser(Long id) {
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+        Long adminId = SecurityUtils.getCurrentUserId();
+
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new BaseException("user.not.found", "USER_NOT_FOUND", HttpStatus.NOT_FOUND));
 
-        // Vérification : ne pas supprimer un membre actif dans une tontine
+        validateAssociationAccess(user, associationId);
+
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new BaseException("admin.not.found", "ADMIN_NOT_FOUND", HttpStatus.NOT_FOUND));
+
+        // Règle métier : ne pas supprimer un membre actif dans une tontine
         if (memberTontineRepository.existsByUserId(id)) {
             throw new BaseException("user.has.active.tontines", "FORBIDDEN_DELETE", HttpStatus.BAD_REQUEST);
         }
 
         userRepository.delete(user);
+        auditLogService.logAction("DELETE_USER", "User", id, admin);
     }
 
     /**
-     * Helper pour enrichir le UserResponse avec les infos des autres modules
+     * Helper pour vérifier l'isolation des données entre associations
      */
+    private void validateAssociationAccess(User user, Long currentAssociationId) {
+        if (!user.getAssociation().getId().equals(currentAssociationId)) {
+            throw new BaseException("access.denied", "FORBIDDEN_CROSS_TENANT", HttpStatus.FORBIDDEN);
+        }
+    }
+
     private UserResponse enrichResponse(User user) {
         Integer tontineCount = (int) memberTontineRepository.countByUserId(user.getId());
-
-        // Logique d'éligibilité simplifiée : a un compte épargne avec solde > 0
-        boolean isEligible = savingsRepository.findByUserId(user.getId())
+        boolean isEligible = savingsRepository.findByUser_Id(user.getId())
                 .map(s -> s.getBalance().compareTo(java.math.BigDecimal.ZERO) > 0)
                 .orElse(false);
 

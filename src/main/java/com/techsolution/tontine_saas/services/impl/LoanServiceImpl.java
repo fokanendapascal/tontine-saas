@@ -1,7 +1,6 @@
 package com.techsolution.tontine_saas.services.impl;
 
 import com.techsolution.tontine_saas.dtos.request.LoanRequest;
-import com.techsolution.tontine_saas.dtos.request.UserRequest;
 import com.techsolution.tontine_saas.dtos.response.LoanResponse;
 import com.techsolution.tontine_saas.entities.Loan;
 import com.techsolution.tontine_saas.entities.LoanStatus;
@@ -11,6 +10,7 @@ import com.techsolution.tontine_saas.mappers.LoanMapper;
 import com.techsolution.tontine_saas.repository.LoanRepaymentRepository;
 import com.techsolution.tontine_saas.repository.LoanRepository;
 import com.techsolution.tontine_saas.repository.UserRepository;
+import com.techsolution.tontine_saas.security.SecurityUtils;
 import com.techsolution.tontine_saas.services.AuditLogService;
 import com.techsolution.tontine_saas.services.LoanService;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +20,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -28,18 +27,24 @@ public class LoanServiceImpl implements LoanService {
 
     private final LoanRepository loanRepository;
     private final UserRepository userRepository;
-    private final LoanRepaymentRepository loanrepaymentRepository;
+    private final LoanRepaymentRepository loanRepaymentRepository;
     private final AuditLogService auditLogService;
 
     @Override
     @Transactional
-    public LoanResponse createLoanRequest(LoanRequest loanRequest, Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+    public LoanResponse createLoanRequest(LoanRequest loanRequest) {
+        // L'ID utilisateur est celui de la personne connectée (le demandeur)
+        Long userId = SecurityUtils.getCurrentUserId();
 
-        // Conversion DTO -> Entity via le Mapper
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BaseException("user.not.found", "USER_NOT_FOUND", HttpStatus.NOT_FOUND));
+
+        // Conversion DTO -> Entity
         Loan loan = LoanMapper.toEntity(loanRequest, user);
         loan.setStatus(LoanStatus.PENDING);
+
+        // Initialisation des montants par défaut si nécessaire
+        loan.setRemainingAmount(loan.calculateInitialTotal());
 
         Loan savedLoan = loanRepository.save(loan);
 
@@ -50,27 +55,25 @@ public class LoanServiceImpl implements LoanService {
 
     @Override
     @Transactional
-    public LoanResponse approveLoan(Long loanId, UserRequest adminRequest) {
+    public LoanResponse approveLoan(Long loanId) {
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+        Long adminId = SecurityUtils.getCurrentUserId();
+
         Loan loan = findLoanById(loanId);
 
-        // Correction : on lance une exception métier, pas le Handler !
-        User admin = userRepository.findByEmail(adminRequest.getEmail())
-                .orElseThrow(() -> new BaseException(
-                        "user.not.found",
-                        "USER_NOT_FOUND",
-                        HttpStatus.NOT_FOUND,
-                        adminRequest.getEmail()
-                ));
+        // Sécurité Multi-tenant : Vérifier que le prêt appartient à l'association de l'admin
+        validateAssociationAccess(loan, associationId);
+
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new BaseException("admin.not.found", "ADMIN_NOT_FOUND", HttpStatus.NOT_FOUND));
 
         if (loan.getStatus() != LoanStatus.PENDING) {
-            throw new BaseException(
-                    "loan.invalid.status",
-                    "INVALID_LOAN_STATUS",
-                    HttpStatus.BAD_REQUEST
-            );
+            throw new BaseException("loan.invalid.status", "INVALID_LOAN_STATUS", HttpStatus.BAD_REQUEST);
         }
 
         loan.setStatus(LoanStatus.APPROVED);
+        loan.setStartDate(java.time.LocalDate.now());
+
         Loan updatedLoan = loanRepository.save(loan);
 
         auditLogService.logAction("APPROVE_LOAN", "Loan", updatedLoan.getId(), admin);
@@ -80,19 +83,18 @@ public class LoanServiceImpl implements LoanService {
 
     @Override
     @Transactional
-    public LoanResponse rejectLoan(Long loanId, UserRequest adminRequest) {
-        Loan loan = findLoanById(loanId);
+    public LoanResponse rejectLoan(Long loanId) {
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+        Long adminId = SecurityUtils.getCurrentUserId();
 
-        User admin = userRepository.findByEmail(adminRequest.getEmail())
-                .orElseThrow(() -> new BaseException(
-                        "user.not.found",
-                        "USER_NOT_FOUND",
-                        HttpStatus.NOT_FOUND,
-                        adminRequest.getEmail()
-                ) );
+        Loan loan = findLoanById(loanId);
+        validateAssociationAccess(loan, associationId);
+
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new BaseException("admin.not.found", "ADMIN_NOT_FOUND", HttpStatus.NOT_FOUND));
 
         if (loan.getStatus() != LoanStatus.PENDING) {
-            throw new IllegalStateException("Impossible de rejeter un prêt déjà traité.");
+            throw new BaseException("loan.invalid.status", "CANNOT_REJECT_PROCESSED_LOAN", HttpStatus.BAD_REQUEST);
         }
 
         loan.setStatus(LoanStatus.REJECTED);
@@ -105,41 +107,50 @@ public class LoanServiceImpl implements LoanService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<LoanResponse> getUserLoans(Long userId) {
-        return loanRepository.findByUserId(userId).stream()
+    public List<LoanResponse> getUserLoans() {
+        Long userId = SecurityUtils.getCurrentUserId();
+        return loanRepository.findByUser_Id(userId).stream()
                 .map(this::convertToResponse)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<LoanResponse> getAssociationLoans(Long associationId) {
+    public List<LoanResponse> getAssociationLoans() {
+        Long associationId = SecurityUtils.getCurrentAssociationId();
         return loanRepository.findByUser_Association_Id(associationId).stream()
                 .map(this::convertToResponse)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public LoanResponse getLoanById(Long loanId) {
-        return convertToResponse(findLoanById(loanId));
+        Long associationId = SecurityUtils.getCurrentAssociationId();
+        Loan loan = findLoanById(loanId);
+
+        validateAssociationAccess(loan, associationId);
+
+        return convertToResponse(loan);
     }
 
     // --- Helpers ---
+    private void validateAssociationAccess(Loan loan, Long associationId) {
+        if (!loan.getUser().getAssociation().getId().equals(associationId)) {
+            throw new BaseException("access.denied", "FORBIDDEN_LOAN_ACCESS", HttpStatus.FORBIDDEN);
+        }
+    }
 
     private Loan findLoanById(Long id) {
         return loanRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Prêt introuvable ID: " + id));
-    }
-
-    private User findUserById(Long id) {
-        return userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Utilisateur introuvable ID: " + id));
+                .orElseThrow(() -> new BaseException("loan.not.found", "LOAN_NOT_FOUND", HttpStatus.NOT_FOUND));
     }
 
     private LoanResponse convertToResponse(Loan loan) {
-        // On récupère dynamiquement la somme des remboursements pour enrichir le DTO
-        BigDecimal totalRepaid = loanrepaymentRepository.sumAmountByLoanId(loan.getId());
+        BigDecimal totalRepaid = loanRepaymentRepository.sumAmountByLoanId(loan.getId());
+        if (totalRepaid == null) totalRepaid = BigDecimal.ZERO;
+
         return LoanMapper.toResponse(loan, totalRepaid);
     }
+
 }

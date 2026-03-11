@@ -17,7 +17,7 @@ public interface AssociationService {
 
     void deactivateAssociation(Long id);
 
-    void activateAssociation(Long id);
+    AssociationResponse activateAssociation(Long id);
 
     void deleteAssociation(Long id);
 }

@@ -10,8 +10,8 @@ public interface UserService {
     UserResponse createUser(UserRequest request);
     UserResponse getUserById(Long id);
     UserResponse getUserByEmail(String email);
-    List<UserResponse> getUsersByAssociation(Long associationId);
-    UserResponse updateUserStatus(Long id, boolean active, Long adminId);
-    void deleteUser(Long id, Long adminId);
+    List<UserResponse> getUsersByAssociation();
+    UserResponse updateUserStatus(Long id, boolean active);
+    void deleteUser(Long id);
 
 }

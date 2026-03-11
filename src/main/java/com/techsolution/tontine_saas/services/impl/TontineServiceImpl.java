@@ -3,6 +3,7 @@ package com.techsolution.tontine_saas.services.impl;
 import com.techsolution.tontine_saas.dtos.request.TontineRequest;
 import com.techsolution.tontine_saas.dtos.response.TontineResponse;
 import com.techsolution.tontine_saas.entities.Association;
+import com.techsolution.tontine_saas.entities.ContributionStatus;
 import com.techsolution.tontine_saas.entities.Tontine;
 import com.techsolution.tontine_saas.entities.User;
 import com.techsolution.tontine_saas.exceptions.BaseException;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -127,8 +129,11 @@ public class TontineServiceImpl implements TontineService {
     private TontineResponse enrichResponse(Tontine tontine) {
         Long totalMembers = memberTontineRepository.countByTontineId(tontine.getId());
         // On s'assure que sumPaidAmountByTontineId gère les retours null (BigDecimal.ZERO)
-        BigDecimal totalCollected = contributionRepository.sumPaidAmountByTontineId(tontine.getId());
-        if(totalCollected == null) totalCollected = BigDecimal.ZERO;
+        BigDecimal totalCollected = Optional.ofNullable(
+                contributionRepository.sumPaidAmountByTontineId(tontine.getId(),
+                        ContributionStatus.PAID
+                )
+        ).orElse(BigDecimal.ZERO);
 
         return TontineMapper.toResponse(tontine, totalMembers, totalCollected);
     }

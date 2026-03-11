@@ -32,5 +32,7 @@ public interface SavingsTransactionRepository extends JpaRepository<SavingsTrans
 
     // Pour filtrer par type (ex: voir uniquement les dépôts)
     List<SavingsTransaction> findBySavingsIdAndType(Long savingsId, TransactionType type);
+
+    Long countByTypeAndSavingsId(TransactionType transactionType, Long id);
 }
 
